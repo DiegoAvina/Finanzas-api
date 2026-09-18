@@ -1,59 +1,69 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Finanzas API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+API en Laravel 12 para una app de finanzas personales: sueldo semanal, gastos, recibos (bills), metas de ahorro (individuales y grupales), tandas y un calendario financiero que combina todo lo anterior.
 
-## About Laravel
+## Stack
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- PHP 8.2+, Laravel 12
+- Autenticación por token con [Laravel Sanctum](https://laravel.com/docs/sanctum)
+- SQLite en desarrollo/testing, MySQL disponible vía `docker-compose.yml`
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Puesta en marcha
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+touch database/database.sqlite   # si usas SQLite (default de .env.example)
+php artisan migrate
+php artisan serve
+```
 
-## Learning Laravel
+Para correr con MySQL en Docker: `docker compose up -d` y ajusta `DB_*` en `.env` acorde a las variables de `docker-compose.yml` (`DB_ROOT_PASSWORD`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, con defaults de desarrollo si no las defines).
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+Configura `CORS_ALLOWED_ORIGINS` en `.env` con la URL del frontend que consumirá la API (separadas por coma si son varias).
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## Tests
 
-## Laravel Sponsors
+```bash
+php artisan test
+```
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+## Autenticación
 
-### Premium Partners
+Todas las rutas bajo `auth:sanctum` requieren el header `Authorization: Bearer <token>`, obtenido de `/api/auth/register` o `/api/auth/login`.
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+| Método | Endpoint | Descripción |
+|---|---|---|
+| POST | `/api/auth/register` | Crea un usuario y devuelve `{ token, user }` |
+| POST | `/api/auth/login` | Devuelve `{ token, user }` |
+| POST | `/api/auth/logout` | Revoca el token actual |
+| GET | `/api/auth/me` | Usuario autenticado |
 
-## Contributing
+`register`/`login` están limitadas a 5 intentos por minuto por IP.
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+## Endpoints principales
 
-## Code of Conduct
+| Método | Endpoint | Descripción |
+|---|---|---|
+| GET | `/api/dashboard` | Resumen: ahorro, recibos, metas, tandas, calendario, sueldo/gasto semanal |
+| POST | `/api/dashboard/weekly-income` | Registra/actualiza el sueldo de la semana actual |
+| GET/POST/PUT/DELETE | `/api/bills` | CRUD de recibos (`due_date`, `status`, etc.) |
+| GET | `/api/expenses` | Gastos por semana o mes (`?scope=week\|month&date=YYYY-MM-DD`) |
+| POST/DELETE | `/api/expenses` | Registrar/eliminar un gasto |
+| GET | `/api/saving-goals` | Metas de ahorro del usuario (propias o donde participa) |
+| POST | `/api/saving-goals` | Crear meta |
+| POST | `/api/saving-goals/{id}/contribute` | Aportar a una meta (solo dueño o participante) |
+| POST | `/api/saving-goals/{id}/members` | Agregar participante por email (solo el dueño) |
+| GET | `/api/tandas` | Tandas del usuario (dueño o miembro) |
+| POST | `/api/tandas` | Crear tanda |
+| POST | `/api/tandas/{id}/members` | Agregar miembro por email (solo el dueño) |
+| POST | `/api/tandas/{id}/payments` | Registrar un pago (solo dueño o miembro); avanza la vuelta y la próxima fecha de pago |
+| GET | `/api/calendar` | Eventos combinados (bills, tandas, metas, manuales) + gastos diarios en un rango `?start_date&end_date` |
+| GET | `/api/calendar/events` | Misma idea, agrupado por mes (`?month=YYYY-MM`) |
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Los controles de acceso a metas de ahorro y tandas usan Policies (`app/Policies`), no checks manuales repetidos por controlador.
 
-## Security Vulnerabilities
+## Manejo de errores
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
-
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Las respuestas de error de la API son JSON homogéneo (`{ "message": "...", "errors"?: {...} }`) manejado centralmente en `bootstrap/app.php`. Con `APP_DEBUG=false` no se exponen stack traces ni detalles internos.

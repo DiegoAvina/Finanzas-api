@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Tanda;
-use App\Models\User;
 use App\Models\TandaPayment;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
@@ -21,9 +21,9 @@ class TandaController extends Controller
         $tandas = Tanda::with(['members', 'payments'])
             ->where(function ($q) use ($user) {
                 $q->where('user_id', $user->id)
-                  ->orWhereHas('members', function ($qp) use ($user) {
-                      $qp->where('user_id', $user->id);
-                  });
+                    ->orWhereHas('members', function ($qp) use ($user) {
+                        $qp->where('user_id', $user->id);
+                    });
             })
             ->orderBy('created_at', 'desc')
             ->get();
@@ -39,35 +39,37 @@ class TandaController extends Controller
         $user = $request->user();
 
         $data = $request->validate([
-            'name'                => ['required', 'string', 'max:255'],
-            'description'         => ['nullable', 'string'],
+            'name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
             'contribution_amount' => ['required', 'numeric', 'min:0.01'],
-            'num_members'         => ['required', 'integer', 'min:2'],
-            'frequency'           => ['required', 'in:weekly,biweekly,monthly'],
-            'start_date'          => ['required', 'date'],
+            'num_members' => ['required', 'integer', 'min:2'],
+            'frequency' => ['required', 'in:weekly,biweekly,monthly'],
+            'start_date' => ['required', 'date'],
         ]);
 
         $potAmount = $data['contribution_amount'] * $data['num_members'];
 
         $tanda = Tanda::create([
-            'user_id'             => $user->id,
-            'name'                => $data['name'],
-            'description'         => $data['description'] ?? null,
+            'user_id' => $user->id,
+            'name' => $data['name'],
+            'description' => $data['description'] ?? null,
             'contribution_amount' => $data['contribution_amount'],
-            'num_members'         => $data['num_members'],
-            'pot_amount'          => $potAmount,
-            'frequency'           => $data['frequency'],
-            'start_date'          => $data['start_date'],
-            'current_round'       => 1,
-            'status'              => 'active',
+            'num_members' => $data['num_members'],
+            'rounds_total' => $data['num_members'],
+            'pot_amount' => $potAmount,
+            'frequency' => $data['frequency'],
+            'start_date' => $data['start_date'],
+            'current_round' => 1,
+            'next_payment_date' => $data['start_date'],
+            'status' => 'active',
         ]);
 
         // El dueño entra como miembro turno 1
         $tanda->members()->syncWithoutDetaching([
             $user->id => [
-                'turn_order'   => 1,
+                'turn_order' => 1,
                 'has_received' => false,
-                'received_at'  => null,
+                'received_at' => null,
             ],
         ]);
 
@@ -82,15 +84,10 @@ class TandaController extends Controller
      */
     public function addMember(Request $request, Tanda $tanda)
     {
-        $userAuth = $request->user();
-
-        // Solo el dueño puede agregar miembros
-        if ($tanda->user_id !== $userAuth->id) {
-            abort(403, 'No tienes permiso para modificar esta tanda.');
-        }
+        $this->authorize('manageMembers', $tanda);
 
         $data = $request->validate([
-            'email'      => ['required', 'email'],
+            'email' => ['required', 'email'],
             'turn_order' => ['required', 'integer', 'min:1'],
         ]);
 
@@ -104,16 +101,16 @@ class TandaController extends Controller
 
         $tanda->members()->syncWithoutDetaching([
             $user->id => [
-                'turn_order'   => $data['turn_order'],
+                'turn_order' => $data['turn_order'],
                 'has_received' => false,
-                'received_at'  => null,
+                'received_at' => null,
             ],
         ]);
 
         $tanda->load(['members', 'payments']);
 
         return response()->json([
-            'ok'    => true,
+            'ok' => true,
             'tanda' => $tanda,
         ]);
     }
@@ -126,30 +123,36 @@ class TandaController extends Controller
     {
         $user = $request->user();
 
-        // podrías validar que sólo miembros de la tanda puedan pagar
-        if (
-            $tanda->user_id !== $user->id &&
-            ! $tanda->members()->where('users.id', $user->id)->exists()
-        ) {
-            abort(403, 'No perteneces a esta tanda.');
-        }
+        $this->authorize('registerPayment', $tanda);
 
         $data = $request->validate([
-            'amount'   => ['required', 'numeric', 'min:0.01'],
+            'amount' => ['required', 'numeric', 'min:0.01'],
             'due_date' => ['nullable', 'date'],
-            'paid_at'  => ['nullable', 'date'],
-            'notes'    => ['nullable', 'string'],
+            'paid_at' => ['nullable', 'date'],
+            'notes' => ['nullable', 'string'],
         ]);
 
-        $payment = new TandaPayment();
+        $payment = new TandaPayment;
         $payment->tanda_id = $tanda->id;
-        $payment->user_id  = $user->id;
-        $payment->amount   = $data['amount'];
+        $payment->user_id = $user->id;
+        $payment->amount = $data['amount'];
         $payment->due_date = $data['due_date'] ?? null;
-        $payment->paid_at  = $data['paid_at'] ?? now();
-        $payment->status   = 'paid';
-        $payment->notes    = $data['notes'] ?? null;
+        $payment->paid_at = $data['paid_at'] ?? now();
+        $payment->status = 'paid';
+        $payment->notes = $data['notes'] ?? null;
         $payment->save();
+
+        // Avanzar la tanda a la siguiente vuelta y recalcular el próximo pago.
+        $baseDate = $tanda->next_payment_date ?? now();
+        $tanda->current_round = $tanda->current_round + 1;
+        $tanda->next_payment_date = $tanda->nextPaymentDateAfter($baseDate);
+
+        if ($tanda->rounds_total && $tanda->current_round > $tanda->rounds_total) {
+            $tanda->status = 'completed';
+            $tanda->next_payment_date = null;
+        }
+
+        $tanda->save();
 
         // TODO: aquí podemos:
         //  - Descontar del sueldo/semana (Expense)
@@ -159,8 +162,8 @@ class TandaController extends Controller
         $tanda->load(['members', 'payments']);
 
         return response()->json([
-            'ok'      => true,
-            'tanda'   => $tanda,
+            'ok' => true,
+            'tanda' => $tanda,
             'payment' => $payment,
         ]);
     }

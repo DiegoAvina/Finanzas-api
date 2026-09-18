@@ -20,9 +20,9 @@ class SavingGoalController extends Controller
         $goals = SavingGoal::with(['participants'])
             ->where(function ($q) use ($user) {
                 $q->where('user_id', $user->id)
-                  ->orWhereHas('participants', function ($qp) use ($user) {
-                      $qp->where('user_id', $user->id);
-                  });
+                    ->orWhereHas('participants', function ($qp) use ($user) {
+                        $qp->where('user_id', $user->id);
+                    });
             })
             ->orderBy('created_at', 'desc')
             ->get();
@@ -38,32 +38,32 @@ class SavingGoalController extends Controller
         $user = $request->user();
 
         $data = $request->validate([
-            'name'           => ['required', 'string', 'max:255'],
-            'description'    => ['nullable', 'string'],
-            'target_amount'  => ['required', 'numeric', 'min:0.01'],
+            'name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'target_amount' => ['required', 'numeric', 'min:0.01'],
             'current_amount' => ['nullable', 'numeric', 'min:0'],
-            'deadline'       => ['nullable', 'date'],
-            'category'       => ['nullable', 'string', 'max:100'],
-            'is_group'       => ['boolean'],
+            'deadline' => ['nullable', 'date'],
+            'category' => ['nullable', 'string', 'max:100'],
+            'is_group' => ['boolean'],
         ]);
 
-        $goal = new SavingGoal();
-        $goal->user_id        = $user->id;
-        $goal->name           = $data['name'];
-        $goal->description    = $data['description'] ?? null;
-        $goal->target_amount  = $data['target_amount'];
+        $goal = new SavingGoal;
+        $goal->user_id = $user->id;
+        $goal->name = $data['name'];
+        $goal->description = $data['description'] ?? null;
+        $goal->target_amount = $data['target_amount'];
         $goal->current_amount = $data['current_amount'] ?? 0;
-        $goal->deadline       = $data['deadline'] ?? null;
-        $goal->category       = $data['category'] ?? null;
-        $goal->is_group       = $data['is_group'] ?? false;
-        $goal->status         = 'active';
+        $goal->deadline = $data['deadline'] ?? null;
+        $goal->category = $data['category'] ?? null;
+        $goal->is_group = $data['is_group'] ?? false;
+        $goal->status = 'active';
         $goal->save();
 
         // El dueño también es participante (como owner)
         $goal->participants()->syncWithoutDetaching([
             $user->id => [
-                'role'                 => 'owner',
-                'expected_contribution'=> null,
+                'role' => 'owner',
+                'expected_contribution' => null,
             ],
         ]);
 
@@ -77,7 +77,7 @@ class SavingGoalController extends Controller
      */
     public function contribute(Request $request, SavingGoal $savingGoal)
     {
-        $user = $request->user();
+        $this->authorize('contribute', $savingGoal);
 
         $data = $request->validate([
             'amount' => ['required', 'numeric', 'min:0.01'],
@@ -94,7 +94,7 @@ class SavingGoalController extends Controller
         $savingGoal->load('participants');
 
         return response()->json([
-            'ok'   => true,
+            'ok' => true,
             'goal' => $savingGoal,
         ]);
     }
@@ -104,11 +104,7 @@ class SavingGoalController extends Controller
      */
     public function addMember(Request $request, SavingGoal $savingGoal)
     {
-        $userAuth = $request->user();
-
-        if ($savingGoal->user_id !== $userAuth->id) {
-            abort(403, 'No tienes permiso para modificar esta meta.');
-        }
+        $this->authorize('manageMembers', $savingGoal);
 
         $data = $request->validate([
             'email' => ['required', 'email'],
@@ -125,7 +121,7 @@ class SavingGoalController extends Controller
 
         $savingGoal->participants()->syncWithoutDetaching([
             $user->id => [
-                'role'                  => 'member',
+                'role' => 'member',
                 'expected_contribution' => $data['expected_contribution'] ?? null,
             ],
         ]);
@@ -133,7 +129,7 @@ class SavingGoalController extends Controller
         $savingGoal->load('participants');
 
         return response()->json([
-            'ok'   => true,
+            'ok' => true,
             'goal' => $savingGoal,
         ]);
     }
