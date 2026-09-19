@@ -64,4 +64,15 @@ class AuthTest extends TestCase
     {
         $this->getJson('/api/dashboard')->assertStatus(401);
     }
+
+    /**
+     * Regression: sin "Accept: application/json" (p.ej. Postman sin configurar
+     * headers, o un navegador), el middleware de auth intentaba redirigir a
+     * route('login') -que no existe en esta API- y tronaba con un 500 en vez
+     * de devolver un 401 limpio.
+     */
+    public function test_guests_get_a_clean_401_even_without_an_accept_json_header(): void
+    {
+        $this->get('/api/dashboard')->assertStatus(401);
+    }
 }

@@ -18,9 +18,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
-        // Aquí puedes registrar middleware globales si los necesitas,
-        // por ahora lo dejamos como viene por default.
+        // Esta API no tiene una ruta 'login' (no hay frontend con sesión).
+        // Sin esto, cuando un cliente no manda "Accept: application/json",
+        // el middleware de auth intenta redirigir a route('login'), que no
+        // existe, y explota con un 500 en vez de devolver un 401 limpio.
+        $middleware->redirectGuestsTo(fn () => null);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Homogeneiza las respuestas de error de la API en JSON y evita
