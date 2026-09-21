@@ -4,13 +4,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Bill;
+use App\Models\CalendarEvent;
+use App\Models\Expense;
+use App\Models\IncomeOccurrence;
 use App\Models\SavingGoal;
 use App\Models\Tanda;
-use App\Models\CalendarEvent;
 use App\Models\WeeklyIncome;
-use App\Models\Expense;
-use Illuminate\Http\Request;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
@@ -25,9 +26,9 @@ class DashboardController extends Controller
         // 1) Ahorro total
         $goalsQuery = SavingGoal::where(function ($q) use ($user) {
             $q->where('user_id', $user->id)
-              ->orWhereHas('participants', function ($qp) use ($user) {
-                  $qp->where('user_id', $user->id);
-              });
+                ->orWhereHas('participants', function ($qp) use ($user) {
+                    $qp->where('user_id', $user->id);
+                });
         });
 
         $totalSavings = (float) $goalsQuery->sum('current_amount');
@@ -62,33 +63,33 @@ class DashboardController extends Controller
             ->get()
             ->map(function (SavingGoal $goal) {
                 return [
-                    'id'               => $goal->id,
-                    'name'             => $goal->name,
-                    'target_amount'    => (float) $goal->target_amount,
-                    'current_amount'   => (float) $goal->current_amount,
+                    'id' => $goal->id,
+                    'name' => $goal->name,
+                    'target_amount' => (float) $goal->target_amount,
+                    'current_amount' => (float) $goal->current_amount,
                     'progress_percent' => $goal->progress_percent,
-                    'deadline'         => optional($goal->deadline)->toDateString(),
-                    'status'           => $goal->status,
-                    'is_group'         => $goal->is_group,
+                    'deadline' => optional($goal->deadline)->toDateString(),
+                    'status' => $goal->status,
+                    'is_group' => $goal->is_group,
                 ];
             });
 
         // 4) Tandas
         $activeTandasCount = Tanda::where(function ($q) use ($user) {
-                $q->where('user_id', $user->id)
-                  ->orWhereHas('participants', function ($qp) use ($user) {
-                      $qp->where('user_id', $user->id);
-                  });
-            })
+            $q->where('user_id', $user->id)
+                ->orWhereHas('participants', function ($qp) use ($user) {
+                    $qp->where('user_id', $user->id);
+                });
+        })
             ->where('status', 'active')
             ->count();
 
         $nextTandaPayment = Tanda::where(function ($q) use ($user) {
-                $q->where('user_id', $user->id)
-                  ->orWhereHas('participants', function ($qp) use ($user) {
-                      $qp->where('user_id', $user->id);
-                  });
-            })
+            $q->where('user_id', $user->id)
+                ->orWhereHas('participants', function ($qp) use ($user) {
+                    $qp->where('user_id', $user->id);
+                });
+        })
             ->where('status', 'active')
             ->whereDate('next_payment_date', '>=', $today->toDateString())
             ->orderBy('next_payment_date', 'asc')
@@ -106,7 +107,7 @@ class DashboardController extends Controller
 
         // 6) Sueldo semanal actual y gastos de la semana
         $weekStart = $today->copy()->startOfWeek(Carbon::MONDAY);
-        $weekEnd   = $today->copy()->endOfWeek(Carbon::SUNDAY);
+        $weekEnd = $today->copy()->endOfWeek(Carbon::SUNDAY);
 
         $currentIncome = WeeklyIncome::where('user_id', $user->id)
             ->where('week_start', $weekStart->toDateString())
@@ -126,7 +127,7 @@ class DashboardController extends Controller
 
         // 7) Gastos por día del mes
         $monthStart = $today->copy()->startOfMonth();
-        $monthEnd   = $today->copy()->endOfMonth();
+        $monthEnd = $today->copy()->endOfMonth();
 
         $dailyExpenses = Expense::where('user_id', $user->id)
             ->whereBetween('date', [
@@ -139,21 +140,70 @@ class DashboardController extends Controller
             ->get()
             ->map(function ($row) {
                 $date = Carbon::parse($row->date);
+
                 return [
-                    'date'  => $date->toDateString(),
+                    'date' => $date->toDateString(),
                     'total' => (float) $row->total,
                 ];
             });
 
+        // 8) Ingresos del mes (fuentes + ocurrencias)
+        $expectedThisMonth = (float) IncomeOccurrence::where('user_id', $user->id)
+            ->where('status', '!=', 'cancelled')
+            ->whereBetween('expected_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+            ->sum('expected_amount');
+
+        $receivedThisMonth = (float) IncomeOccurrence::where('user_id', $user->id)
+            ->whereIn('status', ['received', 'partial'])
+            ->whereBetween('received_date', [$monthStart->toDateString(), $monthEnd->toDateString()])
+            ->sum('received_amount');
+
+        $pendingThisMonth = max(0, $expectedThisMonth - $receivedThisMonth);
+
+        $nextIncome = IncomeOccurrence::where('user_id', $user->id)
+            ->where('status', 'expected')
+            ->whereDate('expected_date', '>=', $today->toDateString())
+            ->orderBy('expected_date', 'asc')
+            ->with('source:id,name,type')
+            ->first(['id', 'income_source_id', 'expected_amount', 'expected_date']);
+
+        // 9) Proyección financiera: saldo actual + ingresos esperados
+        // (próximos 30 días) - compromisos futuros (recibos pendientes +
+        // próximos pagos de tanda). No se mezcla con el saldo real.
+        $projectionEnd = $today->copy()->addDays(30);
+
+        $upcomingIncome = (float) IncomeOccurrence::where('user_id', $user->id)
+            ->where('status', 'expected')
+            ->whereBetween('expected_date', [$today->toDateString(), $projectionEnd->toDateString()])
+            ->sum('expected_amount');
+
+        $upcomingBills = (float) Bill::where('user_id', $user->id)
+            ->where('status', 'pending')
+            ->whereBetween('due_date', [$today->toDateString(), $projectionEnd->toDateString()])
+            ->sum('amount');
+
+        $upcomingTandaPayments = (float) Tanda::where(function ($q) use ($user) {
+            $q->where('user_id', $user->id)
+                ->orWhereHas('participants', function ($qp) use ($user) {
+                    $qp->where('user_id', $user->id);
+                });
+        })
+            ->where('status', 'active')
+            ->whereBetween('next_payment_date', [$today->toDateString(), $projectionEnd->toDateString()])
+            ->sum('contribution_amount');
+
+        $upcomingCommitments = $upcomingBills + $upcomingTandaPayments;
+        $projectedBalance = $availableThisWeek + $upcomingIncome - $upcomingCommitments;
+
         return response()->json([
             'savings' => [
-                'total'          => $totalSavings,
+                'total' => $totalSavings,
                 'monthly_change' => $monthlyChange,
             ],
             'bills' => [
-                'pending_count'   => $pendingBillsCount,
+                'pending_count' => $pendingBillsCount,
                 'paid_this_month' => $paidBillsThisMonth,
-                'next'            => $nextBills,
+                'next' => $nextBills,
             ],
             'goals' => $goals,
             'tandas' => [
@@ -162,12 +212,24 @@ class DashboardController extends Controller
             ],
             'calendar' => [
                 'upcoming_events' => $upcomingEvents,
-                'daily_expenses'  => $dailyExpenses,
+                'daily_expenses' => $dailyExpenses,
             ],
             'income' => [
-                'weekly_income'       => (float) $weeklyIncomeAmount,
-                'spent_this_week'     => (float) $spentThisWeek,
+                'weekly_income' => (float) $weeklyIncomeAmount,
+                'spent_this_week' => (float) $spentThisWeek,
                 'available_this_week' => (float) $availableThisWeek,
+            ],
+            'incomes' => [
+                'received_this_month' => $receivedThisMonth,
+                'expected_this_month' => $expectedThisMonth,
+                'pending_this_month' => $pendingThisMonth,
+                'next_income' => $nextIncome,
+            ],
+            'projection' => [
+                'current_balance' => (float) $availableThisWeek,
+                'upcoming_income' => $upcomingIncome,
+                'upcoming_commitments' => $upcomingCommitments,
+                'projected_balance' => $projectedBalance,
             ],
         ]);
     }
@@ -186,13 +248,13 @@ class DashboardController extends Controller
 
         $today = now();
         $weekStart = $today->copy()->startOfWeek(Carbon::MONDAY);
-        $weekEnd   = $today->copy()->endOfWeek(Carbon::SUNDAY);
+        $weekEnd = $today->copy()->endOfWeek(Carbon::SUNDAY);
 
         $income = WeeklyIncome::updateOrCreate(
             [
-                'user_id'    => $user->id,
+                'user_id' => $user->id,
                 'week_start' => $weekStart->toDateString(),
-                'week_end'   => $weekEnd->toDateString(),
+                'week_end' => $weekEnd->toDateString(),
             ],
             [
                 'amount' => $data['amount'],
@@ -201,7 +263,7 @@ class DashboardController extends Controller
 
         return response()->json([
             'message' => 'Sueldo semanal registrado',
-            'income'  => $income,
+            'income' => $income,
         ]);
     }
 }
