@@ -211,7 +211,9 @@ class SavingGoalController extends Controller
         $this->authorize('update', $savingGoal);
 
         $request->validate([
-            'image' => ['required', 'image', 'max:4096'],
+            // 'image' por sí solo rechaza HEIC/HEIF (el formato que usa la
+            // galería de iPhone por defecto), aunque sí sea una foto válida.
+            'image' => ['required', 'file', 'mimes:jpg,jpeg,png,bmp,gif,webp,heic,heif', 'max:4096'],
         ]);
 
         if ($savingGoal->image_path) {

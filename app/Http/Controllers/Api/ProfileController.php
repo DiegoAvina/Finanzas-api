@@ -68,7 +68,9 @@ class ProfileController extends Controller
         $user = $request->user();
 
         $request->validate([
-            'avatar' => ['required', 'image', 'max:4096'],
+            // 'image' por sí solo rechaza HEIC/HEIF (el formato que usa la
+            // galería de iPhone por defecto), aunque sí sea una foto válida.
+            'avatar' => ['required', 'file', 'mimes:jpg,jpeg,png,bmp,gif,webp,heic,heif', 'max:4096'],
         ]);
 
         if ($user->avatar_path) {
