@@ -56,6 +56,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/saving-goals', [SavingGoalController::class, 'store']);
     Route::post('/saving-goals/{savingGoal}/contribute', [SavingGoalController::class, 'contribute']);
     Route::post('/saving-goals/{savingGoal}/members', [SavingGoalController::class, 'addMember']);
+    Route::post('/saving-goals/{savingGoal}/image', [SavingGoalController::class, 'uploadImage']);
 
     // TANDAS
     Route::get('/tandas', [TandaController::class, 'index']);

@@ -23,4 +23,12 @@ class SavingGoalPolicy
     {
         return $savingGoal->user_id === $user->id;
     }
+
+    /**
+     * Solo el dueño puede cambiar la portada/imagen de la meta.
+     */
+    public function update(User $user, SavingGoal $savingGoal): bool
+    {
+        return $savingGoal->user_id === $user->id;
+    }
 }

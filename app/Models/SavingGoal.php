@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Facades\Storage;
 
 class SavingGoal extends Model
 {
@@ -15,6 +16,7 @@ class SavingGoal extends Model
         'current_amount',
         'deadline',
         'category',
+        'image_path',
         'is_group',
         'status',
     ];
@@ -28,6 +30,7 @@ class SavingGoal extends Model
 
     protected $appends = [
         'progress_percent',
+        'image_url',
     ];
 
     public function owner()
@@ -58,5 +61,10 @@ class SavingGoal extends Model
         }
 
         return min(100, round(($current / $target) * 100, 1));
+    }
+
+    public function getImageUrlAttribute(): ?string
+    {
+        return $this->image_path ? Storage::disk('public')->url($this->image_path) : null;
     }
 }

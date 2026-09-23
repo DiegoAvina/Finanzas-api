@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\SavingGoal;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class SavingGoalController extends Controller
@@ -126,6 +127,33 @@ class SavingGoalController extends Controller
             ],
         ]);
 
+        $savingGoal->load('participants');
+
+        return response()->json([
+            'ok' => true,
+            'goal' => $savingGoal,
+        ]);
+    }
+
+    /**
+     * 🖼️ Subir/reemplazar la foto de portada de la meta.
+     */
+    public function uploadImage(Request $request, SavingGoal $savingGoal)
+    {
+        $this->authorize('update', $savingGoal);
+
+        $request->validate([
+            'image' => ['required', 'image', 'max:4096'],
+        ]);
+
+        if ($savingGoal->image_path) {
+            Storage::disk('public')->delete($savingGoal->image_path);
+        }
+
+        $path = $request->file('image')->store('saving_goals', 'public');
+
+        $savingGoal->image_path = $path;
+        $savingGoal->save();
         $savingGoal->load('participants');
 
         return response()->json([
