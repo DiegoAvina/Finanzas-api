@@ -23,12 +23,18 @@ return Application::configure(basePath: dirname(__DIR__))
         // el middleware de auth intenta redirigir a route('login'), que no
         // existe, y explota con un 500 en vez de devolver un 401 limpio.
         $middleware->redirectGuestsTo(fn () => null);
+
+        // Aplica el rate limiter 'api' (definido en AppServiceProvider) a
+        // todas las rutas de la API. Antes solo /auth/login y
+        // /auth/register tenían límite; el resto de la API no tenía
+        // ninguno.
+        $middleware->throttleApi();
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Homogeneiza las respuestas de error de la API en JSON y evita
         // filtrar detalles internos (stack traces, mensajes de driver, etc.)
         // cuando APP_DEBUG está en false.
-        $exceptions->render(function (\Throwable $e, Request $request) {
+        $exceptions->render(function (Throwable $e, Request $request) {
             if (! $request->is('api/*') && ! $request->expectsJson()) {
                 return null;
             }

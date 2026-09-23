@@ -9,6 +9,8 @@ use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\IncomeDistributionRuleController;
 use App\Http\Controllers\Api\IncomeOccurrenceController;
 use App\Http\Controllers\Api\IncomeSourceController;
+use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\ReportController;
 use App\Http\Controllers\Api\SavingGoalController;
 use App\Http\Controllers\Api\TandaController;
 use Illuminate\Support\Facades\Route;
@@ -25,9 +27,22 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me', [AuthController::class, 'me']);
 
+    // 👤 Perfil — límite extra sobre las acciones sensibles (cambiar
+    // contraseña, subir foto, borrar datos/cuenta) para dificultar
+    // fuerza bruta contra la confirmación por contraseña.
+    Route::middleware('throttle:10,1')->group(function () {
+        Route::put('/profile', [ProfileController::class, 'update']);
+        Route::post('/profile/avatar', [ProfileController::class, 'uploadAvatar']);
+        Route::post('/profile/reset-data', [ProfileController::class, 'resetData']);
+        Route::delete('/profile', [ProfileController::class, 'destroy']);
+    });
+
     // 📊 Dashboard
     Route::get('/dashboard', [DashboardController::class, 'show']);
     Route::post('/dashboard/weekly-income', [DashboardController::class, 'updateWeeklyIncome']);
+
+    // 📈 Reportes (para el panel web de escritorio)
+    Route::get('/reports/monthly-summary', [ReportController::class, 'monthlySummary']);
 
     // 🧾 Recibos
     Route::apiResource('bills', BillController::class)->except(['create', 'edit']);
