@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\SavingGoal;
+use App\Models\SavingGoalMovement;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -82,7 +84,10 @@ class SavingGoalController extends Controller
 
         $data = $request->validate([
             'amount' => ['required', 'numeric', 'min:0.01'],
+            'description' => ['nullable', 'string', 'max:255'],
         ]);
+
+        $user = $request->user();
 
         $savingGoal->current_amount = $savingGoal->current_amount + $data['amount'];
 
@@ -92,12 +97,75 @@ class SavingGoalController extends Controller
 
         $savingGoal->save();
 
+        SavingGoalMovement::create([
+            'saving_goal_id' => $savingGoal->id,
+            'user_id' => $user->id,
+            'date' => Carbon::today(),
+            'amount' => $data['amount'],
+            'type' => 'deposit',
+            'description' => $data['description'] ?? null,
+        ]);
+
         $savingGoal->load('participants');
 
         return response()->json([
             'ok' => true,
             'goal' => $savingGoal,
         ]);
+    }
+
+    /**
+     * 💸 Registrar un retiro de la meta.
+     */
+    public function withdraw(Request $request, SavingGoal $savingGoal)
+    {
+        $this->authorize('withdraw', $savingGoal);
+
+        $data = $request->validate([
+            'amount' => ['required', 'numeric', 'min:0.01', 'max:' . (float) $savingGoal->current_amount],
+            'description' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $user = $request->user();
+
+        $savingGoal->current_amount = $savingGoal->current_amount - $data['amount'];
+
+        if ($savingGoal->current_amount < $savingGoal->target_amount) {
+            $savingGoal->status = 'active';
+        }
+
+        $savingGoal->save();
+
+        SavingGoalMovement::create([
+            'saving_goal_id' => $savingGoal->id,
+            'user_id' => $user->id,
+            'date' => Carbon::today(),
+            'amount' => -$data['amount'],
+            'type' => 'withdraw',
+            'description' => $data['description'] ?? null,
+        ]);
+
+        $savingGoal->load('participants');
+
+        return response()->json([
+            'ok' => true,
+            'goal' => $savingGoal,
+        ]);
+    }
+
+    /**
+     * 📜 Historial de movimientos (aportes y retiros) de la meta.
+     */
+    public function movements(Request $request, SavingGoal $savingGoal)
+    {
+        $this->authorize('contribute', $savingGoal);
+
+        $movements = $savingGoal->movements()
+            ->orderBy('date', 'desc')
+            ->orderBy('id', 'desc')
+            ->get();
+
+        return response()->json($movements);
     }
 
     /**

@@ -31,4 +31,12 @@ class SavingGoalPolicy
     {
         return $savingGoal->user_id === $user->id;
     }
+
+    /**
+     * Solo el dueño puede retirar dinero de la meta.
+     */
+    public function withdraw(User $user, SavingGoal $savingGoal): bool
+    {
+        return $savingGoal->user_id === $user->id;
+    }
 }

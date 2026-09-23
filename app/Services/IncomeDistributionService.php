@@ -6,6 +6,7 @@ use App\Models\Bill;
 use App\Models\Expense;
 use App\Models\IncomeOccurrence;
 use App\Models\SavingGoal;
+use App\Models\SavingGoalMovement;
 use App\Models\Tanda;
 use App\Models\TandaPayment;
 use App\Models\User;
@@ -113,6 +114,15 @@ class IncomeDistributionService
                     $goal->status = 'completed';
                 }
                 $goal->save();
+
+                SavingGoalMovement::create([
+                    'saving_goal_id' => $goal->id,
+                    'user_id' => $user->id,
+                    'date' => $date,
+                    'amount' => $amount,
+                    'type' => 'auto_from_weekly',
+                    'description' => 'Distribución automática de ingreso',
+                ]);
 
                 $this->recordExpense(
                     $user, $weeklyIncome, $amount, $date,
