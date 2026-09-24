@@ -132,9 +132,11 @@ class TandaController extends Controller
     }
 
     /**
-     * Editar un turno existente: renombrar (solo si es invitado sin
-     * cuenta), reasignar su número, o marcar/desmarcar si ya recibió su
-     * pozo. Solo el dueño de la tanda puede hacerlo.
+     * Editar un turno existente: renombrarlo (invitado sin cuenta) o
+     * cambiar/asignar el correo vinculado (usuario ya registrado) —
+     * enviar uno u otro convierte el turno de invitado a vinculado o
+     * viceversa. También reasigna su número o marca/desmarca si ya
+     * recibió su pozo. Solo el dueño de la tanda puede hacerlo.
      */
     public function updateMember(Request $request, Tanda $tanda, TandaMember $member)
     {
@@ -143,17 +145,25 @@ class TandaController extends Controller
         abort_unless($member->tanda_id === $tanda->id, 404);
 
         $data = $request->validate([
-            'name' => ['sometimes', 'string', 'max:255'],
+            'name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'email' => ['sometimes', 'nullable', 'email'],
             'turn_order' => ['sometimes', 'integer', 'min:1'],
             'has_received' => ['sometimes', 'boolean'],
         ]);
 
-        if (array_key_exists('name', $data)) {
-            if ($member->user_id !== null) {
+        if (! empty($data['email'] ?? null)) {
+            $user = User::where('email', $data['email'])->first();
+
+            if (! $user) {
                 throw ValidationException::withMessages([
-                    'name' => ['Este turno está vinculado a una cuenta; no se puede renombrar.'],
+                    'email' => ['No se encontró un usuario con ese correo.'],
                 ]);
             }
+
+            $member->user_id = $user->id;
+            $member->guest_name = null;
+        } elseif (! empty($data['name'] ?? null)) {
+            $member->user_id = null;
             $member->guest_name = $data['name'];
         }
 
