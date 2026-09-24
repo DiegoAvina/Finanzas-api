@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\TandaResource;
 use App\Models\Tanda;
+use App\Models\TandaMember;
 use App\Models\TandaPayment;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -28,7 +30,7 @@ class TandaController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
-        return response()->json($tandas);
+        return TandaResource::collection($tandas);
     }
 
     /**
@@ -65,53 +67,112 @@ class TandaController extends Controller
         ]);
 
         // El dueño entra como miembro turno 1
-        $tanda->members()->syncWithoutDetaching([
-            $user->id => [
-                'turn_order' => 1,
-                'has_received' => false,
-                'received_at' => null,
-            ],
+        $tanda->members()->create([
+            'user_id' => $user->id,
+            'turn_order' => 1,
+            'has_received' => false,
+            'received_at' => null,
         ]);
 
         $tanda->load(['members', 'payments']);
 
-        return response()->json($tanda, 201);
+        return new TandaResource($tanda);
     }
 
     /**
-     * Agregar miembro a la tanda por correo.
-     * (similar a saving goals)
+     * Agregar miembro/turno a la tanda. Acepta:
+     *  - email: vincula a un usuario ya registrado (como antes).
+     *  - name: crea un turno "invitado" sin cuenta en la app, solo con
+     *    nombre para mostrar. Se requiere uno de los dos, no ambos.
      */
     public function addMember(Request $request, Tanda $tanda)
     {
         $this->authorize('manageMembers', $tanda);
 
         $data = $request->validate([
-            'email' => ['required', 'email'],
+            'email' => ['required_without:name', 'nullable', 'email'],
+            'name' => ['required_without:email', 'nullable', 'string', 'max:255'],
             'turn_order' => ['required', 'integer', 'min:1'],
         ]);
 
-        $user = User::where('email', $data['email'])->first();
+        if (! empty($data['email'])) {
+            $user = User::where('email', $data['email'])->first();
 
-        if (! $user) {
-            throw ValidationException::withMessages([
-                'email' => ['No se encontró un usuario con ese correo.'],
-            ]);
-        }
+            if (! $user) {
+                throw ValidationException::withMessages([
+                    'email' => ['No se encontró un usuario con ese correo.'],
+                ]);
+            }
 
-        $tanda->members()->syncWithoutDetaching([
-            $user->id => [
+            $tanda->members()->updateOrCreate(
+                ['user_id' => $user->id],
+                [
+                    'guest_name' => null,
+                    'turn_order' => $data['turn_order'],
+                    'has_received' => false,
+                    'received_at' => null,
+                ]
+            );
+        } else {
+            $tanda->members()->create([
+                'user_id' => null,
+                'guest_name' => $data['name'],
                 'turn_order' => $data['turn_order'],
                 'has_received' => false,
                 'received_at' => null,
-            ],
-        ]);
+            ]);
+        }
 
         $tanda->load(['members', 'payments']);
 
         return response()->json([
             'ok' => true,
-            'tanda' => $tanda,
+            'tanda' => new TandaResource($tanda),
+        ]);
+    }
+
+    /**
+     * Editar un turno existente: renombrar (solo si es invitado sin
+     * cuenta), reasignar su número, o marcar/desmarcar si ya recibió su
+     * pozo. Solo el dueño de la tanda puede hacerlo.
+     */
+    public function updateMember(Request $request, Tanda $tanda, TandaMember $member)
+    {
+        $this->authorize('manageMembers', $tanda);
+
+        abort_unless($member->tanda_id === $tanda->id, 404);
+
+        $data = $request->validate([
+            'name' => ['sometimes', 'string', 'max:255'],
+            'turn_order' => ['sometimes', 'integer', 'min:1'],
+            'has_received' => ['sometimes', 'boolean'],
+        ]);
+
+        if (array_key_exists('name', $data)) {
+            if ($member->user_id !== null) {
+                throw ValidationException::withMessages([
+                    'name' => ['Este turno está vinculado a una cuenta; no se puede renombrar.'],
+                ]);
+            }
+            $member->guest_name = $data['name'];
+        }
+
+        if (array_key_exists('turn_order', $data)) {
+            $member->turn_order = $data['turn_order'];
+        }
+
+        if (array_key_exists('has_received', $data)) {
+            $member->has_received = $data['has_received'];
+            $member->received_at = $data['has_received'] ? now() : null;
+        }
+
+        $member->save();
+
+        $tanda->load(['members', 'payments']);
+
+        return response()->json([
+            'ok' => true,
+            'tanda' => new TandaResource($tanda),
         ]);
     }
 
@@ -163,7 +224,7 @@ class TandaController extends Controller
 
         return response()->json([
             'ok' => true,
-            'tanda' => $tanda,
+            'tanda' => new TandaResource($tanda),
             'payment' => $payment,
         ]);
     }

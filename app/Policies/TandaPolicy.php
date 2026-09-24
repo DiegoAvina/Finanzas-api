@@ -13,7 +13,7 @@ class TandaPolicy
     public function registerPayment(User $user, Tanda $tanda): bool
     {
         return $tanda->user_id === $user->id
-            || $tanda->members()->where('users.id', $user->id)->exists();
+            || $tanda->members()->where('user_id', $user->id)->exists();
     }
 
     /**

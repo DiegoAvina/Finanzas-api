@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Tanda extends Model
@@ -44,20 +43,21 @@ class Tanda extends Model
     }
 
     /**
-     * Miembros (nombre interno)
+     * Miembros / turnos de la tanda. Cada fila es un número asignado a un
+     * usuario registrado (user_id) O a alguien sin cuenta (guest_name) —
+     * nunca ambos. hasMany en vez de belongsToMany(User) precisamente para
+     * admitir turnos sin usuario vinculado.
      */
-    public function members(): BelongsToMany
+    public function members(): HasMany
     {
-        return $this->belongsToMany(User::class, 'tanda_members')
-            ->withPivot('turn_order', 'has_received', 'received_at')
-            ->withTimestamps();
+        return $this->hasMany(TandaMember::class)->orderBy('turn_order');
     }
 
     /**
      * Alias que usa el Dashboard: participants()
      * (apunta a la misma relación que members)
      */
-    public function participants(): BelongsToMany
+    public function participants(): HasMany
     {
         return $this->members();
     }

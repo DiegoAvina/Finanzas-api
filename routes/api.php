@@ -66,6 +66,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/tandas', [TandaController::class, 'index']);
     Route::post('/tandas', [TandaController::class, 'store']);
     Route::post('/tandas/{tanda}/members', [TandaController::class, 'addMember']);
+    Route::patch('/tandas/{tanda}/members/{member}', [TandaController::class, 'updateMember']);
     Route::post('/tandas/{tanda}/payments', [TandaController::class, 'registerPayment']);
 
     // 💸 Gastos
