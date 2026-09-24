@@ -54,6 +54,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // 🎯 Metas de ahorro
     Route::get('/saving-goals', [SavingGoalController::class, 'index']);
     Route::post('/saving-goals', [SavingGoalController::class, 'store']);
+    Route::put('/saving-goals/{savingGoal}', [SavingGoalController::class, 'update']);
+    Route::delete('/saving-goals/{savingGoal}', [SavingGoalController::class, 'destroy']);
     Route::post('/saving-goals/{savingGoal}/contribute', [SavingGoalController::class, 'contribute']);
     Route::post('/saving-goals/{savingGoal}/members', [SavingGoalController::class, 'addMember']);
     Route::post('/saving-goals/{savingGoal}/image', [SavingGoalController::class, 'uploadImage']);

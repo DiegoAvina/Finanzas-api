@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\IncomeDistributionRule;
 use App\Models\SavingGoal;
 use App\Models\SavingGoalMovement;
 use App\Models\User;
@@ -230,5 +231,59 @@ class SavingGoalController extends Controller
             'ok' => true,
             'goal' => $savingGoal,
         ]);
+    }
+
+    /**
+     * ✏️ Editar los datos de la meta (solo el dueño).
+     */
+    public function update(Request $request, SavingGoal $savingGoal)
+    {
+        $this->authorize('update', $savingGoal);
+
+        $data = $request->validate([
+            'name' => ['sometimes', 'required', 'string', 'max:255'],
+            'description' => ['sometimes', 'nullable', 'string'],
+            'target_amount' => ['sometimes', 'required', 'numeric', 'min:0.01'],
+            'deadline' => ['sometimes', 'nullable', 'date'],
+            'category' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'is_group' => ['sometimes', 'boolean'],
+        ]);
+
+        $savingGoal->fill($data);
+
+        // Si cambió el objetivo, el estado se recalcula contra lo ya ahorrado.
+        $savingGoal->status = $savingGoal->target_amount > 0 && $savingGoal->current_amount >= $savingGoal->target_amount
+            ? 'completed'
+            : 'active';
+
+        $savingGoal->save();
+        $savingGoal->load('participants');
+
+        return response()->json([
+            'ok' => true,
+            'goal' => $savingGoal,
+        ]);
+    }
+
+    /**
+     * 🗑️ Eliminar la meta (solo el dueño). Sus movimientos y participantes se
+     * borran en cascada; aquí limpiamos la portada y las reglas de reparto de
+     * ingresos que apuntaban a ella, para que la distribución no falle después.
+     */
+    public function destroy(Request $request, SavingGoal $savingGoal)
+    {
+        $this->authorize('delete', $savingGoal);
+
+        if ($savingGoal->image_path) {
+            Storage::disk('public')->delete($savingGoal->image_path);
+        }
+
+        IncomeDistributionRule::where('target_type', 'saving_goal')
+            ->where('target_id', $savingGoal->id)
+            ->delete();
+
+        $savingGoal->delete();
+
+        return response()->json(['ok' => true]);
     }
 }

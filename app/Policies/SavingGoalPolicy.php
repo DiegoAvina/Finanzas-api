@@ -25,9 +25,17 @@ class SavingGoalPolicy
     }
 
     /**
-     * Solo el dueño puede cambiar la portada/imagen de la meta.
+     * Solo el dueño puede editar la meta o cambiar su portada.
      */
     public function update(User $user, SavingGoal $savingGoal): bool
+    {
+        return $savingGoal->user_id === $user->id;
+    }
+
+    /**
+     * Solo el dueño puede eliminar la meta.
+     */
+    public function delete(User $user, SavingGoal $savingGoal): bool
     {
         return $savingGoal->user_id === $user->id;
     }
